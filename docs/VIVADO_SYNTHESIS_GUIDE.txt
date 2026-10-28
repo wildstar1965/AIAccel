@@ -1,0 +1,644 @@
+1. Launch Vivado.
+
+   Open Vivado 2025.2 from its installed application shortcut. The project was
+   previously implemented with this version and the Artix-7 device support.
+   Wait for the Vivado welcome screen. No FPGA board is required through step 26.
+
+2. Identify the exact design file and the working folder.
+
+   The board-level source file to select is:
+   C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/rtl/nexys4ddr_top.sv
+
+   Its top module is nexys4ddr_top. This is the FPGA accelerator referred to as
+   the PGA accelerator in this walkthrough. It includes the accelerator core
+   and UART interface, and targets the Nexys 4 DDR, part xc7a100tcsg324-1.
+
+   There is no supplied .xpr project file. Opening the .sv file alone does not
+   load its dependencies or create synthesis and implementation runs. Steps
+   3-7 create the project. Afterward, the exact file to open with Open Project is:
+   C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/build/vivado_guide/pga_accelerator/pga_accelerator.xpr
+
+   All paths below assume the source folder above. If the folder was moved,
+   substitute its new absolute path wherever the root variable is assigned.
+   The complete rtl, constraints, tb and verification/tests folders must be
+   present. The guide creates its own board-test vectors inside Vivado.
+
+3. Create a new Vivado project.
+
+   Select Create Project, then Next. Enter:
+   Project name: pga_accelerator
+   Project location:
+   C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/build/vivado_guide
+
+   Leave Create project subdirectory selected. Use this new directory for the
+   walkthrough; if it already contains a project, reopen that project to resume
+   or choose a new location and adjust guide_dir in step 8. Do not overwrite a
+   previous run you need to retain.
+
+   Click Next, select RTL Project, and leave Do not specify sources at this
+   time unchecked. Click Next.
+
+4. Add the accelerator design sources.
+
+   On Add Sources, click Add Files. Select these files from the rtl folder:
+
+   pkg_accelerator.sv
+   mac_unit.sv
+   systolic_array.sv
+   sram_controller.sv
+   axi_stream_input.sv
+   axi_stream_output.sv
+   quantize_unit.sv
+   layer_ctrl_fsm.sv
+   inference_accelerator_top.sv
+   uart_rx.sv
+   uart_tx.sv
+   uart_packet.sv
+   accelerator_uart_service.sv
+   nexys4ddr_top.sv
+
+   Set Target language to Verilog. The .sv files must retain file type
+   SystemVerilog. Leave Copy sources into project unchecked so the project
+   refers to these exact source files. Add testbenches separately in step 9.
+   Click Next.
+
+5. Add the active constraints file.
+
+   On Add Constraints, click Add Files and select exactly:
+   C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/constraints/nexys4ddr.xdc
+
+   Leave Copy constraints into project unchecked. Only this XDC is active.
+   The similarly named master XDC under docs is a reference, not another
+   constraint source to add. Click Next.
+
+6. Select the exact FPGA part.
+
+   On Default Part, select the Parts tab. Search for xc7a100tcsg324-1 and select
+   that exact part: Artix-7, XC7A100T, CSG324 package, speed grade -1.
+   A board preset is not required. Click Next, verify the project summary,
+   then Finish.
+
+7. Check the project top and source hierarchy.
+
+   In Sources > Design Sources, right-click nexys4ddr_top and choose Set as Top
+   if it is not already the top. Double-click nexys4ddr_top.sv to open it in
+   Vivado's source editor. Confirm these four board ports:
+
+   CLK100MHZ     clock input
+   CPU_RESETN    active-low reset input
+   UART_TXD_IN   serial input to the FPGA
+   UART_RXD_OUT  serial output from the FPGA
+
+   The board UART parameter CLKS_PER_BIT must remain at its default, 868.
+   Check that pkg_accelerator.sv precedes files importing its package in
+   Sources > Compile Order. Vivado normally determines this automatically.
+   Review Messages and resolve missing modules or package errors before running.
+   Vivado saves the project configuration in the .xpr path from step 2.
+
+8. Prepare the Vivado console and output folders.
+
+   Open Window > Tcl Console if the console is hidden. Every command block in
+   this guide is entered in this Vivado console. Paste an entire block together.
+   Keep this project open while following the steps. On reopening Vivado,
+   repeat the variable assignments below before using later command blocks.
+
+   set root {C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator}
+   set guide_dir [file join $root build vivado_guide]
+   set report_dir [file join $guide_dir reports]
+   set sim_dir [file join $guide_dir simulation]
+   file mkdir $report_dir $sim_dir
+   set_property top nexys4ddr_top [get_filesets sources_1]
+   set_property simulator_language Mixed [current_project]
+   update_compile_order -fileset sources_1
+
+   Open Settings > Simulation and select Vivado Simulator as Target simulator.
+   Leave its standard device simulation libraries enabled.
+
+9. Add the existing behavioral testbenches.
+
+   Select Add Sources > Add or create simulation sources. Choose simulation
+   set sim_1 and add these four files, leaving Copy sources unchecked:
+
+   tb/tb_inference_accelerator.sv
+   tb/tb_core_contract.sv
+   tb/tb_uart_phy.sv
+   tb/tb_uart_faults.sv
+
+   Click Finish. Keep these files under Simulation Sources. They are not design
+   sources to synthesize. Set up the first test in the Vivado Tcl Console:
+
+   current_fileset -simset sim_1
+   set_property top tb_inference_accelerator [get_filesets sim_1]
+   set_property generic {CLK_PERIOD=10.0} [get_filesets sim_1]
+   set test_dir [file join $root verification tests test_identity_8x8]
+   set_property xsim.simulate.xsim.more_options [format {-testplusarg "test_dir=%s"} $test_dir] [get_filesets sim_1]
+   update_compile_order -fileset sim_1
+
+   The testbench defaults to a 5 ns clock; CLK_PERIOD=10.0 makes this behavioral
+   test run at the board's 100 MHz clock. This override belongs to the simulation
+   set, not to the board design.
+
+10. Run the first behavioral inference test.
+
+    In Flow Navigator, select Simulation > Run Simulation > Run Behavioral
+    Simulation. Wait for compilation and elaboration to finish. In the simulator
+    toolbar select Run All, or enter run all in the Tcl Console.
+
+    Require both of these messages:
+    RESULT: PASS (8/8 outputs matched)
+    TEST PASSED
+
+    A simulator window opening, a short default run finishing, or $finish alone
+    is not a pass. Reject missing vector-file errors, TEST FAILED, Fatal,
+    MISMATCH, unexpected error_flag, and timeout messages.
+
+    The test reads config.txt, weights.hex, activations.hex and expected.txt
+    from the absolute test_dir supplied in step 9. No vector generation is
+    required for the stored core cases.
+
+11. Inspect the inference waveform and run the remaining core cases.
+
+    In the simulation Scope and Objects panes, select signals under
+    tb_inference_accelerator and use Add to Wave Window. Useful signals are
+    clk, rst_n, start, layer_desc_valid, layer_desc_ready, wgt_wr_en,
+    s_axis_tvalid, s_axis_tready, m_axis_tvalid, m_axis_tready, m_axis_tdata,
+    m_axis_tkeep, m_axis_tlast, busy, done_out and error_flag.
+
+    After adding signals, use Restart followed by Run All to capture the full
+    run. Use Zoom Fit. Check a descriptor handshake, weight loading, activation
+    transfers and checked outputs. A stream transfer occurs only when both
+    valid and ready are high. Output data must remain stable during stalls.
+
+    Close the simulation with File > Close Simulation or close_sim. For each
+    remaining case below, change the directory name in these commands, then
+    launch behavioral simulation and Run All again:
+
+    set test_dir [file join $root verification tests test_random_small]
+    set_property xsim.simulate.xsim.more_options [format {-testplusarg "test_dir=%s"} $test_dir] [get_filesets sim_1]
+
+    test_random_small
+    test_multi_tile
+    test_large_tile
+    test_deep_ic
+    test_deep_oc
+    test_boundary_min
+    test_boundary_max
+    test_asymmetric
+    test_relu_activation
+
+    Require TEST PASSED and all expected outputs matched for every case. The ten
+    stored cases, including identity, contain 792 scalar outputs in total.
+    Preserve each run's simulation log before launching the next case; Vivado
+    can reuse the same simulation directory. The console identifies that path.
+
+12. Run the core contract, UART and recovery tests.
+
+    Close any active simulation. Clear the core test's options and select the
+    first unit test:
+
+    set_property generic {} [get_filesets sim_1]
+    set_property xsim.simulate.xsim.more_options {} [get_filesets sim_1]
+    set_property top tb_core_contract [get_filesets sim_1]
+    update_compile_order -fileset sim_1
+
+    Launch Run Behavioral Simulation, then Run All. Require CORE CONTRACT PASS.
+    This checks invalid descriptors, watchdogs, input byte masking, delayed
+    input, output stalls and abort clearing queued output.
+
+    Close the simulation. Repeat after setting top to tb_uart_phy; require
+    UART PHY PASS: 257 RX, 256 TX. This includes the actual 868-clock UART
+    divisor, baud tolerance, false starts, framing errors and break recovery.
+
+    Close the simulation. Repeat after setting top to tb_uart_faults; require
+    UART FAULTS PASS: 58 transactions. This includes reset/reload and a checked
+    identity inference after fault recovery. These three tests need no data
+    files. Run All is necessary; the UART test runs for tens of milliseconds
+    of simulated time.
+
+    These are behavioral tests. In particular, the fault test forces internal
+    RTL signals and must not be selected as the board netlist testbench.
+
+13. Prepare a board-port testbench for all three design stages.
+
+    Close the simulation. The repository's tb_uart_system.sv serial mode uses
+    a simulation-only divisor of 16. A synthesized board netlist has the fixed
+    divisor 868 and no replaceable CLKS_PER_BIT parameter. Create a separate
+    simulation-only copy using the block below. It keeps the original file
+    intact, uses the four board ports, lengthens receive timeouts, and holds
+    reset beyond the device model's initial global-reset interval.
+
+    set f [open [file join $root tb tb_uart_system.sv] r]
+    set board_tb [read $f]
+    close $f
+    set edits [list \
+        {module tb_uart_system;} {module tb_vivado_board;} \
+        {parameter SERIAL=0;} {localparam SERIAL=1;} \
+        {localparam CPB=16;} {localparam CPB=868;} \
+        {nexys4ddr_top #(.CLKS_PER_BIT(CPB)) dut(} {nexys4ddr_top dut(} \
+        {@(negedge serial_tx);} {wait(rst_n === 1'b1); @(negedge serial_tx);} \
+        {repeat(10) @(negedge clk); rst_n=1;} {repeat(100) @(negedge clk); rst_n=1;} \
+        {timeout<200000} {timeout<20000000}]
+    foreach {old new} $edits {
+        if {[string first $old $board_tb] < 0} {
+            error "Testbench changed: cannot find $old"
+        }
+    }
+    set board_tb [string map $edits $board_tb]
+    set f [open [file join $sim_dir tb_vivado_board.sv] w]
+    puts $f $board_tb
+    close $f
+
+14. Create complete board-test vectors within Vivado.
+
+    Paste the following block in the Vivado Tcl Console. It writes eight
+    requests and expected replies: RESET, PING, CONFIG, WEIGHTS, ACTIVATIONS,
+    START, STATUS and READ. The calculation is a 1x8 input [1,2,3,4,5,6,7,8]
+    multiplied by an 8x8 identity matrix, with shift=0, zero point=0 and ReLU=0.
+    The exact expected result is [1,2,3,4,5,6,7,8].
+
+    The existing serial monitor checks framing, response command and sequence,
+    payload length, CRC, status and every result byte. Only the variable cycle
+    count in STATUS is masked. The STATUS check also requires completion and
+    no inference error.
+
+    proc guide_crc16 {bytes} {
+        set crc 65535
+        foreach b $bytes {
+            set crc [expr {$crc ^ ($b << 8)}]
+            for {set i 0} {$i < 8} {incr i} {
+                if {$crc & 32768} {
+                    set crc [expr {(($crc << 1) ^ 4129) & 65535}]
+                } else {
+                    set crc [expr {($crc << 1) & 65535}]
+                }
+            }
+        }
+        return $crc
+    }
+    proc guide_transaction {f cmd seq payload expected gap} {
+        set n [llength $payload]
+        set body [concat [list 1 $cmd $seq [expr {$n & 255}] [expr {$n >> 8}]] $payload]
+        set crc [guide_crc16 $body]
+        set packet [concat {85 170} $body [list [expr {$crc & 255}] [expr {$crc >> 8}]]]
+        puts $f [list [llength $packet] $gap [expr {$cmd | 128}] $seq [llength $expected]]
+        set hex {}
+        foreach b $packet {lappend hex [format %02x $b]}
+        puts $f [join $hex " "]
+        puts $f [join $expected " "]
+    }
+    set vector_file [file join $sim_dir board_identity_vectors.txt]
+    set f [open $vector_file w]
+    guide_transaction $f 21 0 {} {0} 0
+    guide_transaction $f 1 1 {} {0 65 73 56 1 0 4 8 8} 0
+    guide_transaction $f 16 2 {8 0 8 0 1 0 0 0 0} {0} 0
+    set weights {0 0}
+    for {set row 0} {$row < 8} {incr row} {
+        for {set col 0} {$col < 8} {incr col} {
+            lappend weights [expr {$row == $col ? 1 : 0}]
+        }
+    }
+    guide_transaction $f 17 3 $weights {0} 0
+    guide_transaction $f 18 4 {0 0 1 2 3 4 5 6 7 8} {0} 0
+    guide_transaction $f 19 5 {} {0} 0
+    set expected_status {0 30 0 0 0 8 0 1 0 1 0 8 0 1 0 1 0 -1 -1 -1 -1 0 0 0 0}
+    guide_transaction $f 2 6 {} $expected_status 10000
+    guide_transaction $f 20 7 {0 0 1} {0 1 2 3 4 5 6 7 8} 0
+    close $f
+
+15. Add the board test to its own simulation set and run it behaviorally.
+
+    Enter these commands once to create the board_sim set:
+
+    create_fileset -simset board_sim
+    set_property source_set sources_1 [get_filesets board_sim]
+    add_files -fileset board_sim -norecurse [file join $sim_dir tb_vivado_board.sv]
+    set_property top tb_vivado_board [get_filesets board_sim]
+    set_property generic {} [get_filesets board_sim]
+    set_property xsim.simulate.xsim.more_options [format {-testplusarg "vectors=%s"} $vector_file] [get_filesets board_sim]
+    current_fileset -simset board_sim
+    update_compile_order -fileset board_sim
+
+    Keep the synthesis top as nexys4ddr_top. The simulation top is separately
+    tb_vivado_board. This simulation set contains only the board testbench;
+    the behavioral unit testbenches remain in sim_1.
+
+    Select Run Behavioral Simulation, then Run All. Require exactly:
+    SYSTEM PASS: 8 transactions SERIAL=1
+
+    Also require no Fatal, timeout or reply mismatch. Observe clk at a 10 ns
+    period, rst_n low initially for 1000 ns, idle-high serial_rx/serial_tx, and
+    UART bits lasting 8680 ns. The eight transactions take many milliseconds
+    of simulated time. Save this run's log, then close the simulation.
+
+16. Check elaboration and the constraints before synthesis.
+
+    In Flow Navigator, select RTL Analysis > Open Elaborated Design. Inspect
+    the hierarchy and schematic for nexys4ddr_top, its UART blocks and the
+    accelerator under u_service/u_core. Resolve missing-source or port errors.
+
+    Open constraints/nexys4ddr.xdc from Sources. Confirm:
+
+    CLK100MHZ     E3    LVCMOS33    sys_clk period 10.000 ns
+    CPU_RESETN    C12   LVCMOS33    asynchronous active-low input
+    UART_TXD_IN   C4    LVCMOS33    asynchronous serial input
+    UART_RXD_OUT  D4    LVCMOS33    serial output
+
+    The XDC limits UART TX register-to-pad delay to 10 ns. It makes explicit
+    asynchronous-input exceptions for reset and the first RX synchronizer
+    stage. Internal accelerator paths still use the 100 MHz clock. Preserve
+    these constraints when judging timing; missing paths cannot establish a pass.
+
+17. Run synthesis.
+
+    In Settings > Synthesis, use the default synthesis strategy. Confirm the
+    top is nexys4ddr_top and the target part is xc7a100tcsg324-1.
+    In Flow Navigator, click Run Synthesis. Select Launch runs on local host
+    and accept the run dialog. Watch Messages and the Design Runs tab.
+
+    Wait for synth_1 to complete successfully. If Vivado reports an error,
+    open its run log and fix the first actionable error before continuing.
+    When prompted, select Open Synthesized Design.
+
+18. Inspect and save the synthesized design results.
+
+    Select Reports > Report Utilization and enable hierarchical reporting.
+    Check that the accelerator and its 8x8 MAC array remain in the design.
+    The reference synthesis retained all 64 MACs and used 69 DSP blocks total
+    and 8 RAMB36 blocks. A missing array or unexpectedly near-empty design
+    usually indicates the wrong top or disconnected logic.
+
+    Select Reports > Timing > Report Timing Summary. Review clock coverage
+    and unconstrained paths. Synthesis timing uses estimates before routing;
+    final acceptance is based on routed timing in step 22.
+
+    Save inspection artifacts in the Vivado Tcl Console:
+
+    write_checkpoint -force [file join $report_dir synthesized.dcp]
+    report_utilization -hierarchical -file [file join $report_dir utilization_synth.rpt]
+    report_timing_summary -file [file join $report_dir timing_synth.rpt]
+
+    Review Messages for inferred latches, black boxes, removed logic and
+    unexpected memory implementation. Investigate warnings in their design
+    context; successful synthesis alone does not prove correct inference.
+
+19. Test the synthesized board netlist.
+
+    Confirm board_sim is the active simulation set, with tb_vivado_board top.
+    Select Simulation > Run Simulation > Run Post-Synthesis Functional
+    Simulation. The equivalent Vivado console command is:
+
+    launch_simulation -simset board_sim -mode post-synthesis -type functional
+
+    Use either the menu or the command, then Run All. Require
+    SYSTEM PASS: 8 transactions SERIAL=1 and no failures. This checks that the
+    synthesized logic still performs the board-port identity transaction.
+    It does not check routed delays. Save the simulation log under a distinct
+    name, such as board_post_synth_functional.log, then close the simulation.
+
+20. Run implementation through routing.
+
+    Open Settings > Implementation and use the default implementation strategy.
+    Enable physical optimization between placement and routing. The equivalent
+    setting in the Vivado Tcl Console is:
+
+    set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+
+    In Flow Navigator, click Run Implementation. Select local execution and
+    wait for impl_1 to complete through route_design. This performs logic
+    optimization, placement, physical optimization and routing.
+
+    When implementation completes, select Open Implemented Design. If a dialog
+    offers bitstream generation, open the implemented design first to review
+    its reports. A completed route can still have timing violations.
+
+21. Generate the implementation reports and checkpoint.
+
+    With the implemented design open, paste this block in the Tcl Console:
+
+    write_checkpoint -force [file join $report_dir routed.dcp]
+    report_utilization -file [file join $report_dir utilization_routed.rpt]
+    report_timing_summary -delay_type min_max -check_timing_verbose -report_unconstrained -file [file join $report_dir timing_routed.rpt]
+    report_timing -delay_type max -max_paths 10 -file [file join $report_dir critical_setup_paths.rpt]
+    report_timing -delay_type min -max_paths 10 -file [file join $report_dir critical_hold_paths.rpt]
+    report_route_status -file [file join $report_dir route_status.rpt]
+    report_drc -file [file join $report_dir drc.rpt]
+    report_methodology -file [file join $report_dir methodology.rpt]
+    report_cdc -file [file join $report_dir cdc.rpt]
+    report_timing -from [get_cells u_tx/tx_reg_reg] -to [get_ports UART_RXD_OUT] -file [file join $report_dir uart_output_timing.rpt]
+
+    The reports are under build/vivado_guide/reports. In Vivado, use the Reports
+    menu for interactive reports or open the saved .rpt files in its text editor.
+
+22. Apply the routed implementation acceptance checks.
+
+    In Report Timing Summary, verify all of the following for the current run:
+
+    Setup WNS >= 0 ns; TNS = 0 ns; zero failing setup endpoints.
+    Hold WHS >= 0 ns; THS = 0 ns; zero failing hold endpoints.
+    Pulse width WPWS >= 0 ns; TPWS = 0 ns; zero failing pulse-width endpoints.
+    sys_clk exists with a 10.000 ns period.
+    No unclocked registers or constant-clock problems.
+    No unconstrained internal endpoints, combinational loops or latch loops.
+    Asynchronous exceptions match the intended XDC exceptions from step 16.
+
+    In Report Route Status, require all routable nets fully routed, no partial
+    or unrouted nets, and zero routing errors. In Report DRC, require zero
+    errors. Review every critical warning and the methodology warnings.
+    In Report CDC, confirm the reset-release and RX synchronizers are recognized
+    and investigate any unsafe or unknown crossings. The reference reports
+    show two safe endpoints and zero unsafe/unknown endpoints.
+
+    In uart_output_timing.rpt, confirm the path exists, has a 10.000 ns max-delay
+    requirement, and has nonnegative slack. A missing path is a failure of
+    constraint coverage, not a zero-delay success.
+
+    Do not accept the implementation if any required check fails. Inspect the
+    worst path by selecting it in the timing report and opening its schematic
+    or device view. Correct the source/constraint cause, rerun the affected
+    simulations and runs, and regenerate the reports. Keep the board frequency
+    at 100 MHz and retain the intended timing checks when comparing results.
+
+23. Compare with the existing implementation, without assuming identical results.
+
+    The retained reference run is build/release_20261027_full, documented on
+    2026-10-27. Its measured routed results were:
+
+    Setup WNS / TNS:         +0.112 ns / 0.000 ns
+    Hold WHS / THS:          +0.064 ns / 0.000 ns
+    Pulse WPWS / TPWS:       +3.750 ns / 0.000 ns
+    Slice LUTs:             9,333 / 63,400
+    Slice registers:        5,852 / 126,800
+    RAMB36 / DSP48E1:        8 / 69
+    Bonded I/O:             4
+    Fully routed nets:      12,556 / 12,556
+    DRC errors:             0
+
+    These are previous measurements, not promised results for this new project.
+    Strategy, source, implementation and Vivado-version differences can change
+    the numbers. Apply step 22 to your actual run. The reference setup margin
+    is small. Its retained DSP/BRAM pipeline and reset-related warnings still
+    require review; zero DRC errors does not mean zero warnings.
+
+24. Test the routed netlist functionally.
+
+    With board_sim selected, choose Run Simulation > Run Post-Implementation
+    Functional Simulation, or enter:
+
+    launch_simulation -simset board_sim -mode post-implementation -type functional
+
+    Select Run All. Require SYSTEM PASS: 8 transactions SERIAL=1 with no failures.
+    Save the log as board_post_impl_functional.log, then close the simulation.
+    This isolates netlist functionality before adding propagation delays.
+
+25. Test the routed netlist with timing delays.
+
+    Select Run Simulation > Run Post-Implementation Timing Simulation, or enter:
+
+    launch_simulation -simset board_sim -mode post-implementation -type timing
+
+    Vivado generates a timing netlist and an SDF delay file from the implemented
+    design and connects them to the selected testbench. Inspect the elaboration
+    and simulation messages to confirm SDF annotation applies to the board DUT
+    at tb_vivado_board/g_serial/dut and that device global initialization is
+    present. Reject missing-instance annotation errors; an unannotated run does
+    not count as a timing simulation.
+
+    Select Run All. Allow substantially more execution time than the behavioral
+    test. Require SYSTEM PASS: 8 transactions SERIAL=1. Review the full log for
+    setup/hold violations, timing-check messages, unknown values affecting
+    responses, failed CRC/result comparisons and timeouts. Investigate any
+    violation even if the final transaction check passes. Keep timing checks
+    enabled. Save the log as board_post_impl_timing.log and retain the generated
+    timing netlist, SDF and waveform evidence. Record the delay corner used.
+
+    Static timing from step 22 covers setup and hold across the timed paths.
+    This timing simulation adds a checked execution at the board interface;
+    one identity case is not exhaustive arithmetic or protocol verification.
+    The broader behavioral tests in steps 10-12 remain part of acceptance.
+
+26. Generate the bitstream after verification passes.
+
+    Close the simulation. Confirm the current sources and constraints match
+    those used by the passing synthesis, implementation and simulation runs.
+    If Vivado marks a run out of date, rebuild and repeat the relevant checks.
+
+    In Flow Navigator select Program and Debug > Generate Bitstream. Accept
+    local execution. Wait for write_bitstream to finish without errors, then
+    review its DRC messages. The normal project output is:
+    C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/build/vivado_guide/pga_accelerator/pga_accelerator.runs/impl_1/nexys4ddr_top.bit
+
+    Confirm the file belongs to this successful run. The .bit file is used for
+    programming; routed.dcp is used for implemented-design inspection. A
+    bitstream by itself is not evidence that inference results were checked.
+
+27. Optionally program a matching Nexys 4 DDR board in Vivado.
+
+    Connect and power the board using its programming connection. In Flow
+    Navigator select Open Hardware Manager, then Open Target > Auto Connect.
+    Confirm the detected FPGA matches XC7A100T. Right-click it, select Program
+    Device, and choose the exact .bit file from step 26. No debug probes file is
+    supplied or required. Click Program and wait for successful completion.
+
+    Press and release CPU RESET. This design has no LED-based inference result
+    display and no included on-chip debug probes. Vivado programming success
+    confirms configuration, while the simulations above check inference.
+    Physical inference is not verified by this Vivado-only walkthrough.
+    Record board programming as NOT RUN if no board is connected.
+
+28. Use the supplied build script when a scripted rebuild is preferred.
+
+    This is an alternative to the project synthesis/implementation steps, not
+    a step to run inside the open pga_accelerator project. In a fresh Vivado
+    session with no project open, the exact build entry file is:
+    C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator/scripts/build_vivado.tcl
+
+    Open Window > Tcl Console and execute the block below. Choose an unused
+    output directory; the existing script overwrites outputs when reusing one.
+
+    set root {C:/Users/tejar/OneDrive/Desktop/fpga-ai-accelerator}
+    set script_out [file join $root build vivado_script_guide]
+    if {[file exists $script_out]} {error "Choose a new script_out directory"}
+    set argv [list $script_out]
+    set argc [llength $argv]
+    source [file join $root scripts build_vivado.tcl]
+
+    Sourcing the file executes it. The script loads all 14 RTL files and the
+    active XDC, synthesizes nexys4ddr_top, optimizes, places, physically optimizes,
+    routes, writes reports and checkpoints, applies timing/coverage/DRC/routing
+    gates, and generates a bitstream only if its gates pass.
+
+    Require BUILD PASS in the console and these entries in result.txt:
+    PART=xc7a100tcsg324-1
+    WNS_NS and WHS_NS nonnegative
+    WPWS_NS nonnegative
+    DRC_ERRORS=0
+    UNROUTED_NETS=0
+    TIMING_COVERAGE_PASS=1
+    BITSTREAM_GENERATED=1
+
+    Outputs include synthesized.dcp, routed.dcp, result.txt, the .rpt reports
+    and nexys4ddr_top.bit in script_out. This is an in-memory non-project flow;
+    it does not produce a .xpr or automatically run the simulations above.
+    Open its routed.dcp with File > Checkpoint > Open, or use open_checkpoint
+    with that absolute filename in a fresh Vivado session, to inspect it.
+    Do not label the separate project simulations as tests of this script's
+    netlist unless that particular netlist was actually simulated.
+
+29. Resolve common flow failures and retain the run evidence.
+
+    If compilation cannot find pkg_accelerator, check that it is a design source,
+    its type is SystemVerilog, and it precedes its importers in Compile Order.
+    If a behavioral test reports missing data, reapply the absolute test_dir or
+    vectors option to the simulation set being launched.
+
+    If netlist elaboration rejects CLKS_PER_BIT, select the generated
+    tb_vivado_board testbench from step 13, which has no DUT parameter override.
+    If serial simulation times out, check the selected top, divisor 868, 10 ns
+    clock, reset interval, vector path, complete Run All execution and SDF
+    annotation. Do not treat a timeout or a short default run as a pass.
+
+    If implementation fails timing, inspect the worst paths and active XDC
+    before changing anything. If bitstream generation fails, inspect its DRC
+    messages, part selection and all four pin assignments. If a run fails to
+    start, review the first Vivado error for installation/device support,
+    installation/device support or output-folder access.
+
+    Retain the .xpr and its project folders, exact RTL/XDC sources, generated
+    board testbench/vectors, synthesis and implementation logs, reports,
+    checkpoints, bitstream and each distinct simulation log. After source edits,
+    refresh results; historical logs do not verify the changed design.
+
+30. Complete the final verification summary.
+
+    Record the following outline for your actual run. In Vivado's text editor,
+    create a text file named verification_summary.txt under
+    build/vivado_guide/reports, or use the Tcl Console to write that text file.
+    Mark unexecuted stages NOT RUN; do not copy reference measurements as new
+    results. Include:
+
+    Run date and Vivado version:
+    Project .xpr path and source folder:
+    Target part / design top / clock period:
+    Active constraints file:
+    Core behavioral cases passed / scalar outputs matched:
+    Core contract / UART PHY / UART faults results:
+    Board behavioral test result:
+    Post-synthesis functional test result:
+    Synthesis utilization and report path:
+    Implementation route status:
+    Setup WNS/TNS / hold WHS/THS / pulse WPWS/TPWS:
+    Timing coverage / UART output constraint result:
+    DRC errors / reviewed warnings / CDC result:
+    Post-implementation functional test result:
+    Post-implementation timing test result and SDF corner:
+    Simulation log, waveform, netlist and SDF paths:
+    Routed checkpoint and bitstream paths:
+    Board programming result, or NOT RUN:
+    Physical inference: NOT VERIFIED by this walkthrough.
+    Overall result: PASS only for the stages actually completed successfully.
+
+    Summary file description: docs/VIVADO_SYNTHESIS_GUIDE.txt is the single
+    plain-text walkthrough covering Vivado launch, exact source/project
+    selection, behavioral testing, synthesis, implementation, netlist testing,
+    timing acceptance, bitstream generation and optional board programming.
+    The run-specific verification_summary.txt records the resulting evidence.

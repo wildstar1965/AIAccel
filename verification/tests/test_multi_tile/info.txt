@@ -1,0 +1,10 @@
+Test: Multi-Tile (4×16 × 16×16)
+IC tiles: 2, OC tiles: 2
+Total tiles: 4
+Shift=8, ZP=0, ReLU=True
+Expected output:
+[[ 1  1  2  0  0  7  5 14  0  3  7  0  0  0  8  8]
+ [ 0  0  5  0  2  0  0  0  0  0  0  0  0  0  0  1]
+ [ 0  5  5  7  2  2  0  1  8  0  0  2  4  1  0  0]
+ [ 3  4  2  7  1  0  0  0  4  3  0  7  0  2  0  0]]
+Coverage: Tiling, IC accumulation, cross-tile psum

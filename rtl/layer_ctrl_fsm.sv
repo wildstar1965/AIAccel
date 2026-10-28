@@ -56,6 +56,9 @@ module layer_ctrl_fsm
   // Weight load control (to external DMA)
   output logic                          wgt_load_start,
   input  logic                          wgt_load_done,
+  input  logic                          activation_available,
+  input  logic                          activation_accepted,
+  input  logic                          result_accepted,
 
   // Activation input control
   output logic                          act_input_enable,
@@ -177,7 +180,7 @@ module layer_ctrl_fsm
 
       FSM_LOAD_DESC: begin
         if (layer_desc_valid)
-          state_next = FSM_LOAD_WEIGHTS;
+          state_next = is_valid_layer_desc(layer_desc_in) ? FSM_LOAD_WEIGHTS : FSM_IDLE;
         else if (watchdog_timeout)
           state_next = FSM_IDLE; // Timeout → error → idle
       end
@@ -190,9 +193,10 @@ module layer_ctrl_fsm
       end
 
       FSM_LOAD_ACT: begin
-        // Transition to compute after activations start streaming
-        // (In practice, LOAD_ACT and COMPUTE overlap; simplified here)
-        state_next = FSM_COMPUTE;
+        if (activation_available)
+          state_next = FSM_COMPUTE;
+        else if (watchdog_timeout)
+          state_next = FSM_IDLE;
       end
 
       FSM_COMPUTE: begin
@@ -262,6 +266,7 @@ module layer_ctrl_fsm
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state_reg       <= FSM_IDLE;
+      layer_desc      <= '0;
       desc_loaded     <= 1'b0;
       ic_tile_idx     <= '0;
       oc_tile_idx     <= '0;
@@ -305,6 +310,10 @@ module layer_ctrl_fsm
           if (layer_desc_valid) begin
             layer_desc  <= layer_desc_in;
             desc_loaded <= 1'b1;
+            if (!is_valid_layer_desc(layer_desc_in)) begin
+              err_flag_reg <= 1'b1;
+              err_code_reg <= ERR_BAD_CONFIG;
+            end
           end
         end
 
@@ -315,8 +324,8 @@ module layer_ctrl_fsm
         end
 
         FSM_LOAD_ACT: begin
-          // Pre-increment address counter (first SRAM read issued this cycle)
-          if (!wgt_addr_done)
+          // First SRAM read is issued only after an activation is staged.
+          if (activation_available && !wgt_addr_done)
             wgt_addr_cnt <= wgt_addr_cnt + 1;
         end
 
@@ -395,7 +404,8 @@ module layer_ctrl_fsm
   assign sram_rd_base = SRAM_ADDR_W'(oc_tile_idx * ic_tiles_total + ic_tile_idx)
                         * SRAM_ADDR_W'(ARRAY_ROWS);
 
-  assign sram_rd_en        = ((state_reg == FSM_COMPUTE) || (state_reg == FSM_LOAD_ACT)) &&
+  assign sram_rd_en        = ((state_reg == FSM_COMPUTE) ||
+                             (state_reg == FSM_LOAD_ACT && activation_available)) &&
                              !wgt_addr_done;
   assign sram_rd_addr      = sram_rd_base + wgt_addr_cnt;
   // Swap banks: after weight load completes (so compute reads new data)
@@ -426,7 +436,7 @@ module layer_ctrl_fsm
   assign output_data_valid = (state_reg == FSM_STORE_OUTPUT) ||
                              (state_reg == FSM_DRAIN) ||
                              (state_reg == FSM_QUANT);
-  assign output_data_last  = (state_reg == FSM_STORE_OUTPUT) && last_oc_tile && last_ic_tile && last_spatial;
+  assign output_data_last  = last_oc_tile && last_ic_tile && last_spatial;
 
   // -------------------------------------------------------------------------
   // Performance Counters (8 × 32-bit)
@@ -467,11 +477,11 @@ module layer_ctrl_fsm
         perf_ctr_reg[2] <= perf_ctr_reg[2] + 1;
 
       // AXI read beats (activation input)
-      if (act_input_enable)
+      if (activation_accepted)
         perf_ctr_reg[3] <= perf_ctr_reg[3] + 1;
 
       // AXI write beats (output)
-      if (state_reg == FSM_STORE_OUTPUT && output_accepted)
+      if (result_accepted)
         perf_ctr_reg[4] <= perf_ctr_reg[4] + 1;
 
       // Layers done

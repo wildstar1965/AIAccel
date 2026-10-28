@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+backups/
+.Xil/
+*.jou
+*.log
+*.wdb
+xsim.dir/
+clockInfo.txt
+dfx_runtime.txt
+tight_setup_hold_pins.txt

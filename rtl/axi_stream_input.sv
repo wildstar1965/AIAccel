@@ -77,7 +77,8 @@ module axi_stream_input
   genvar ui;
   generate
     for (ui = 0; ui < ARRAY_ROWS; ui = ui + 1) begin : gen_unpack
-      assign unpacked[ui] = $signed(s_axis_tdata[ui*ACT_WIDTH +: ACT_WIDTH]);
+      assign unpacked[ui] = s_axis_tkeep[ui] ?
+                           $signed(s_axis_tdata[ui*ACT_WIDTH +: ACT_WIDTH]) : 8'sd0;
     end
   endgenerate
 

@@ -1,0 +1,9 @@
+Test: Deep IC (4x32 x 32x8)
+IC tiles: 4, OC tiles: 1, Total: 4
+Shift=10, ZP=0, ReLU=True
+Expected output:
+[[0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]
+ [0 0 0 0 0 0 0 0]]
+Coverage: Deep IC accumulation (4 tiles), partial-sum integrity

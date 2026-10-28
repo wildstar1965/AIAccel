@@ -212,6 +212,12 @@ package pkg_accelerator;
       is_valid_layer_desc = 1'b0;
     else if (desc.out_channels > MAX_CHANNELS[15:0])
       is_valid_layer_desc = 1'b0;
+    else if (desc.in_channels[2:0] != 0 || desc.out_channels[2:0] != 0)
+      is_valid_layer_desc = 1'b0;
+    else if (32'(desc.in_channels) * 32'(desc.out_channels) > SRAM_DEPTH * 8)
+      is_valid_layer_desc = 1'b0;
+    else if (desc.reserved != 0)
+      is_valid_layer_desc = 1'b0;
     else
       is_valid_layer_desc = 1'b1;
   endfunction

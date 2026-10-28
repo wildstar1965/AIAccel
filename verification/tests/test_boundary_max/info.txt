@@ -1,0 +1,5 @@
+Test: Boundary Max (all +127)
+Accumulator per element: 127×127×8 = 129,032
+Shift=10 → 129032>>10 = 126
+Expected output: [126, 126, 126, 126, 126, 126, 126, 126]
+Coverage: Positive overflow boundary, large accumulation

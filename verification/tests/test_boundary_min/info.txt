@@ -1,0 +1,5 @@
+Test: Boundary Min (act=-128, wgt=+127)
+Accumulator per element: -128×127×8 = -130,048
+Shift=10 → -130048>>10 = -128 (boundary!)
+Expected output: [-127, -127, -127, -127, -127, -127, -127, -127]
+Coverage: Negative overflow boundary, saturation edge

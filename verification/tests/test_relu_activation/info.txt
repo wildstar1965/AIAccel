@@ -1,0 +1,18 @@
+Test: ReLU Activation (mixed signs)
+Activations:
+[[ 10 -20  30 -40  50 -60  70 -80]
+ [-10  20 -30  40 -50  60 -70  80]]
+Weights:
+[[ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]
+ [ 5  5 -5 -5  5  5 -5 -5]]
+Shift=4, ZP=0, ReLU=True
+Expected output:
+[[ 0  0 12 12  0  0 12 12]
+ [12 12  0  0 12 12  0  0]]
+Coverage: ReLU clamping, negative→zero, mixed signs

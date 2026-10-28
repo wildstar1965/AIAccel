@@ -353,22 +353,18 @@ module tb_inference_accelerator;
     begin
       $display("  AXI: Streaming %0d activation words...", num_act_words);
       for (i = 0; i < num_act_words; i = i + 1) begin
-        @(posedge clk);
-        #1;
-        s_axis_tdata  = act_mem[i];
-        s_axis_tkeep  = {AXI_KEEP_WIDTH{1'b1}};
+        @(negedge clk);
+        s_axis_tvalid = 0;
+        repeat ((i * 7 + 13) % 23) @(negedge clk);
+        s_axis_tdata = act_mem[i];
+        s_axis_tkeep = '1;
         s_axis_tvalid = 1;
-        s_axis_tlast  = (i == num_act_words - 1);
-        // Wait for ready
-        while (!s_axis_tready) begin
-          @(posedge clk);
-          #1;
-        end
+        s_axis_tlast = (i == num_act_words - 1);
+        do @(posedge clk); while (!s_axis_tready);
+        @(negedge clk);
+        s_axis_tvalid = 0;
       end
-      @(posedge clk);
-      #1;
-      s_axis_tvalid = 0;
-      s_axis_tlast  = 0;
+      s_axis_tlast = 0;
       $display("  AXI: Activation streaming complete");
     end
   endtask
@@ -377,6 +373,21 @@ module tb_inference_accelerator;
   // Output Capture (runs in parallel via fork)
   // =========================================================================
   integer capture_timeout;
+  integer bp_cycle = 0;
+  logic held_valid = 0;
+  logic [63:0] held_data;
+  logic held_last;
+  always @(negedge clk) begin
+    bp_cycle = bp_cycle + 1;
+    m_axis_tready = rst_n && ((bp_cycle % 17) > 7);
+  end
+  always @(posedge clk) begin
+    if (rst_n && held_valid && (!m_axis_tvalid || m_axis_tdata !== held_data || m_axis_tlast !== held_last))
+      $fatal(1, "AXI output changed while stalled");
+    held_valid <= rst_n && m_axis_tvalid && !m_axis_tready;
+    held_data <= m_axis_tdata;
+    held_last <= m_axis_tlast;
+  end
 
   task automatic capture_outputs;
     begin
@@ -384,13 +395,14 @@ module tb_inference_accelerator;
       mismatch_count = 0;
       match_count = 0;
       capture_timeout = 0;
-      m_axis_tready = 1; // Always ready to accept
+
 
       while (output_count * ARRAY_COLS < num_expected &&
              capture_timeout < TIMEOUT_CYCLES) begin
         @(posedge clk);
-        #1;
         if (m_axis_tvalid && m_axis_tready) begin
+          if (m_axis_tkeep !== 8'hff || m_axis_tlast !== (output_count == num_expected/8-1))
+            $fatal(1, "Output KEEP/LAST incorrect at beat %0d", output_count);
           check_output(m_axis_tdata);
           capture_timeout = 0;
         end else begin
@@ -573,7 +585,7 @@ module tb_inference_accelerator;
     if (error_flag)
       $display("  FSM ERROR: code=%0d", error_code);
 
-    if (mismatch_count == 0 && match_count > 0) begin
+    if (mismatch_count == 0 && match_count == num_expected && done_out && !error_flag) begin
       $display("  RESULT: PASS (%0d/%0d outputs matched)",
                match_count, num_expected);
     end else if (match_count == 0 && mismatch_count == 0) begin
@@ -590,7 +602,7 @@ module tb_inference_accelerator;
     print_coverage();
 
     $display("");
-    if (mismatch_count == 0 && match_count > 0)
+    if (mismatch_count == 0 && match_count == num_expected && done_out && !error_flag)
       $display("TEST PASSED");
     else
       $display("TEST FAILED");

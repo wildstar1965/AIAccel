@@ -134,10 +134,11 @@ module inference_accelerator_top
   logic                        quant_valid;
   logic                        quant_valid_d;   // Previous cycle
   logic                        quant_valid_pulse; // Rising-edge pulse
+  logic                        core_rst_n;
 
   // Detect rising edge of quant_valid → 1-cycle pulse
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
+  always_ff @(posedge clk or negedge core_rst_n) begin
+    if (!core_rst_n)
       quant_valid_d <= 1'b0;
     else
       quant_valid_d <= quant_valid;
@@ -153,6 +154,29 @@ module inference_accelerator_top
   // --- FSM misc ---
   logic                    fsm_wgt_load_start;
   logic                    out_accepted;
+
+  // Elastic staging decouples AXI latency from the fixed systolic schedule.
+  logic [63:0] staged_data;
+  logic [7:0] staged_keep;
+  logic staged_last, staged_valid, staged_ready;
+  assign core_rst_n = rst_n && !abort_req;
+  assign s_axis_tready = core_rst_n && busy && !staged_valid;
+  always_ff @(posedge clk or negedge core_rst_n) begin
+    if (!core_rst_n) begin
+      staged_valid <= 1'b0;
+      staged_data <= '0;
+      staged_keep <= '0;
+      staged_last <= 1'b0;
+    end else begin
+      if (staged_ready && staged_valid) staged_valid <= 1'b0;
+      if (s_axis_tready && s_axis_tvalid) begin
+        staged_valid <= 1'b1;
+        staged_data <= s_axis_tdata;
+        staged_keep <= s_axis_tkeep;
+        staged_last <= s_axis_tlast;
+      end
+    end
+  end
 
   // =========================================================================
   // Weight Unpack: SRAM 64-bit word → 8 × INT8 weight columns
@@ -176,7 +200,7 @@ module inference_accelerator_top
   // --- Layer Control FSM ---
   layer_ctrl_fsm u_fsm (
     .clk               (clk),
-    .rst_n             (rst_n),
+    .rst_n             (core_rst_n),
     .start             (start),
     .abort_req             (abort_req),
     .busy              (busy),
@@ -189,6 +213,9 @@ module inference_accelerator_top
     .sram_bank_swap    (fsm_sram_bank_swap),
     .wgt_load_start    (fsm_wgt_load_start),
     .wgt_load_done     (wgt_load_done),
+    .activation_available(staged_valid),
+    .activation_accepted(s_axis_tvalid && s_axis_tready),
+    .result_accepted   (m_axis_tvalid && m_axis_tready),
     .act_input_enable  (fsm_act_enable),
     .act_input_accept  (fsm_act_accept),
     .act_input_flush   (fsm_act_flush),
@@ -212,7 +239,7 @@ module inference_accelerator_top
   // --- SRAM Controller ---
   sram_controller u_sram (
     .clk            (clk),
-    .rst_n          (rst_n),
+    .rst_n          (core_rst_n),
     .bank_swap      (fsm_sram_bank_swap),
     .active_bank    (sram_active_bank),
     .rd_en          (fsm_sram_rd_en),
@@ -228,15 +255,15 @@ module inference_accelerator_top
   // --- AXI4-Stream Input with Diagonal Skew ---
   axi_stream_input u_axi_in (
     .clk            (clk),
-    .rst_n          (rst_n),
+    .rst_n          (core_rst_n),
     .enable         (fsm_act_enable),
     .accept         (fsm_act_accept),
     .flush          (fsm_act_flush),
-    .s_axis_tdata   (s_axis_tdata),
-    .s_axis_tkeep   (s_axis_tkeep),
-    .s_axis_tvalid  (s_axis_tvalid),
-    .s_axis_tready  (s_axis_tready),
-    .s_axis_tlast   (s_axis_tlast),
+    .s_axis_tdata   (staged_data),
+    .s_axis_tkeep   (staged_keep),
+    .s_axis_tvalid  (staged_valid),
+    .s_axis_tready  (staged_ready),
+    .s_axis_tlast   (staged_last),
     .act_out_packed (skew_act_packed),
     .act_valid      (skew_act_valid),
     .frame_last     (skew_frame_last)
@@ -245,7 +272,7 @@ module inference_accelerator_top
   // --- 8×8 Systolic Array ---
   systolic_array u_array (
     .clk             (clk),
-    .rst_n           (rst_n),
+    .rst_n           (core_rst_n),
     .enable          (fsm_array_enable),
     .clear_acc       (fsm_array_clear),
     .valid_reset     (fsm_array_valid_reset),
@@ -260,7 +287,7 @@ module inference_accelerator_top
   // --- Quantization Unit ---
   quantize_unit u_quant (
     .clk            (clk),
-    .rst_n          (rst_n),
+    .rst_n          (core_rst_n),
     .enable         (fsm_quant_enable),
     .relu_en        (fsm_quant_relu),
     .shift_amount   (fsm_quant_shift),
@@ -277,7 +304,7 @@ module inference_accelerator_top
   // not FSM state, to ensure real data is sent
   axi_stream_output u_axi_out (
     .clk            (clk),
-    .rst_n          (rst_n),
+    .rst_n          (core_rst_n),
     .data_in_packed (quant_data_packed),
     .data_valid     (quant_valid_pulse),
     .data_last      (fsm_out_last),
@@ -296,8 +323,8 @@ module inference_accelerator_top
   // FSM reaches STORE_OUTPUT). Reset at start of each spatial position.
   logic output_was_sent;
 
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
+  always_ff @(posedge clk or negedge core_rst_n) begin
+    if (!core_rst_n)
       output_was_sent <= 1'b0;
     else if (fsm_array_clear)
       output_was_sent <= 1'b0;
